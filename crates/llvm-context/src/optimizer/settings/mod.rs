@@ -125,6 +125,21 @@ impl Settings {
         }
     }
 
+    /// Returns the optimization level to embed in a textual pass pipeline
+    /// (`default<O...>`).
+    ///
+    /// LLVM 23 removed the `Os`/`Oz` pipeline levels: size optimization is now
+    /// expressed as an `O2` pipeline plus the `optsize`/`minsize` function
+    /// attributes (mirroring how clang lowers `-Os`/`-Oz`). The attributes
+    /// themselves are applied by [`crate::optimizer::Optimizer::run`], so both
+    /// size levels map to `O2` here.
+    pub fn middle_end_pipeline_level(&self) -> String {
+        match self.level_middle_end_size {
+            SizeLevel::Zero => (self.level_middle_end as u8).to_string(),
+            SizeLevel::S | SizeLevel::Z => "2".to_owned(),
+        }
+    }
+
     /// Checks whether there are middle-end optimizations enabled.
     pub fn is_middle_end_enabled(&self) -> bool {
         self.level_middle_end != inkwell::OptimizationLevel::None

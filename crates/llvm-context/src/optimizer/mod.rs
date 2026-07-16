@@ -3,8 +3,10 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::polkavm::context::attribute::Attribute;
 use crate::target_machine::TargetMachine;
 
+use self::settings::size_level::SizeLevel;
 use self::settings::Settings;
 
 pub mod settings;
@@ -72,7 +74,9 @@ impl Optimizer {
         target_machine: &TargetMachine,
         module: &inkwell::module::Module,
     ) -> Result<(), inkwell::support::LLVMString> {
-        let optimization_level = self.settings.middle_end_as_string();
+        self.apply_size_optimization_attributes(module);
+
+        let optimization_level = self.settings.middle_end_pipeline_level();
         let pass_pipeline = if self.newyork {
             format!(
                 "mergefunc,default<O{optimization_level}>,mergefunc,ipsccp,deadargelim,attributor,default<O1>,mergefunc"
@@ -81,6 +85,39 @@ impl Optimizer {
             format!("default<O{optimization_level}>")
         };
         target_machine.run_optimization_passes(module, &pass_pipeline)
+    }
+
+    /// Expresses the configured size-optimization level as function attributes.
+    ///
+    /// LLVM 23 removed the `Os`/`Oz` textual pass-pipeline levels; size
+    /// optimization is now driven by the `optsize`/`minsize` function
+    /// attributes on top of an `O2` pipeline (see
+    /// [`Settings::middle_end_pipeline_level`]). This mirrors how clang lowers
+    /// `-Os`/`-Oz`: `-Os` sets `optsize`, `-Oz` sets both `optsize` and
+    /// `minsize`. The attributes are attached to every function definition in
+    /// the module before the pipeline runs; declarations are left untouched.
+    fn apply_size_optimization_attributes(&self, module: &inkwell::module::Module) {
+        let size_attributes: &[Attribute] = match self.settings.level_middle_end_size {
+            SizeLevel::Zero => &[],
+            SizeLevel::S => &[Attribute::OptimizeForSize],
+            SizeLevel::Z => &[Attribute::OptimizeForSize, Attribute::MinSize],
+        };
+        if size_attributes.is_empty() {
+            return;
+        }
+
+        let context = module.get_context();
+        for attribute in size_attributes {
+            let llvm_attribute = context.create_enum_attribute(*attribute as u32, 0);
+            let mut current_function = module.get_first_function();
+            while let Some(function) = current_function {
+                if function.count_basic_blocks() > 0 {
+                    function
+                        .add_attribute(inkwell::attributes::AttributeLoc::Function, llvm_attribute);
+                }
+                current_function = function.get_next_function();
+            }
+        }
     }
 
     /// Returns the optimizer settings reference.

@@ -93,6 +93,7 @@ pub fn build(
                 enable_rtti,
             ))
             .args(crate::platforms::shared::macos_build_opts_ignore_dupicate_libs_warnings())
+            .args(crate::platforms::shared::macos_build_opts_disable_pch())
             .args(crate::platforms::shared::shared_build_opts_sanitizers(
                 sanitizer,
             )),

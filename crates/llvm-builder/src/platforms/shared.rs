@@ -219,6 +219,27 @@ pub fn shared_build_opts_ccache(ccache_variant: Option<CcacheVariant>) -> Vec<St
     }
 }
 
+/// Disable precompiled headers on macOS.
+///
+/// LLVM 23 turns on precompiled headers (`llvm/Support/pch.h`) by default, but
+/// generating the PCH fails on recent Apple toolchains with a libc++ header
+/// search order error (`<cerrno> tried including <errno.h> but didn't find
+/// libc++'s <errno.h>`). Ordinary (non-PCH) compilation of the same sources
+/// succeeds, and PCH is only a build-time optimization that does not affect the
+/// produced libraries, so we disable it.
+///
+/// The flag is also forwarded to the native tablegen sub-build (enabled by
+/// `LLVM_OPTIMIZED_TABLEGEN` together with assertions) via
+/// `CROSS_TOOLCHAIN_FLAGS_LLVM_NATIVE`, which `CrossCompile.cmake` passes
+/// through verbatim to the native build's CMake invocation; without it the
+/// native build would still fail on PCH generation.
+pub fn macos_build_opts_disable_pch() -> Vec<String> {
+    vec![
+        "-DCMAKE_DISABLE_PRECOMPILE_HEADERS='On'".to_owned(),
+        "-DCROSS_TOOLCHAIN_FLAGS_LLVM_NATIVE=-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON".to_owned(),
+    ]
+}
+
 /// Ignore duplicate libraries warnings for MacOS with XCode>=15.
 pub fn macos_build_opts_ignore_dupicate_libs_warnings() -> Vec<String> {
     let xcode_version =

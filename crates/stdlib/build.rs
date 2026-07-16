@@ -24,17 +24,14 @@ fn main() {
         "failed to assemble the stdlib: {output:?}"
     );
 
-    // `inkwell::MemoryBuffer::create_from_memory_range` requires a trailing nul byte
-    // (it subtracts one from the length to drop the terminator), so we embed the bitcode
-    // with an extra nul byte appended.
-    let mut bitcode = fs::read(bitcode_path).expect("bitcode should have been built");
-    bitcode.push(0);
-    let padded_lib = "stdlib_nul.bc";
-    let padded_path = Path::new(&out_dir).join(padded_lib);
-    fs::write(&padded_path, &bitcode).expect("should be able to write in $OUT_DIR");
+    // `inkwell::MemoryBuffer::create_from_memory_range` passes the slice length to LLVM
+    // verbatim with `RequiresNullTerminator = false`, so we embed the raw bitcode as-is.
+    // LLVM's bitcode reader rejects any buffer whose size is not a multiple of four with
+    // an "Invalid bitcode signature" error, so no trailing padding may be appended here.
+    let bitcode = fs::read(&bitcode_path).expect("bitcode should have been built");
     let len = bitcode.len();
     let src_path = Path::new(&out_dir).join("stdlib.rs");
-    let src = format!("pub static BITCODE: &[u8; {len}] = include_bytes!(\"{padded_lib}\");");
+    let src = format!("pub static BITCODE: &[u8; {len}] = include_bytes!(\"{lib}\");");
     fs::write(src_path, src).expect("should be able to write in $OUT_DIR");
 
     println!("cargo:rerun-if-changed=stdlib.ll");
